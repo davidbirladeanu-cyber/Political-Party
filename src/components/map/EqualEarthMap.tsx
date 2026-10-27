@@ -166,7 +166,7 @@ export default function EqualEarthMap({
   }, []);
 
   // D3 Equal Earth Projection & GeoPath: entire globe is completely visible
-  const { pathGenerator, graticulePath, spherePath, countryFeatures } = useMemo(() => {
+  const { pathGenerator, graticulePath, spherePath, countryFeatures, landPath } = useMemo(() => {
     const { width, height } = dimensions;
     // Scale ensures the entire globe fits with comfortable margin inside the container
     const scale = Math.min(width / 5.65, height / 2.85);
@@ -183,9 +183,17 @@ export default function EqualEarthMap({
     const sphPath = pathGen(sphere as any) || "";
 
     let features: any[] = [];
-    if (worldData && worldData.objects && worldData.objects.countries) {
-      const geoObj: any = topojson.feature(worldData, worldData.objects.countries);
-      features = geoObj.features || [];
+    let lPath = "";
+
+    if (worldData && worldData.objects) {
+      if (worldData.objects.countries) {
+        const geoObj: any = topojson.feature(worldData, worldData.objects.countries);
+        features = geoObj.features || [];
+      }
+      if (worldData.objects.land) {
+        const landObj: any = topojson.feature(worldData, worldData.objects.land);
+        lPath = pathGen(landObj) || "";
+      }
     }
 
     return {
@@ -193,10 +201,11 @@ export default function EqualEarthMap({
       graticulePath: gratPath,
       spherePath: sphPath,
       countryFeatures: features,
+      landPath: lPath,
     };
   }, [dimensions, worldData]);
 
-  // Historical merged empires and dissolved internal borders
+  // Historical merged empires with dissolved internal borders & territory centroids
   const historicalRenderData = useMemo(() => {
     if (!worldData || !worldData.objects || !worldData.objects.countries || year >= 2026) {
       return null;
@@ -204,52 +213,47 @@ export default function EqualEarthMap({
 
     const era = getClosestHistoricalEra(year);
     const geometries = worldData.objects.countries.geometries || [];
-    const assignedIds = new Set<string>();
 
-    const mergedEntities = era.entities.map((entity) => {
-      const matchingGeoms = geometries.filter((g: any) => {
-        const id3 = String(g.id).padStart(3, "0");
-        const idNorm = String(parseInt(id3, 10));
-        const matches =
-          entity.territoryNumericCodes.includes(id3) ||
-          entity.territoryNumericCodes.includes(idNorm);
-        if (matches) {
-          assignedIds.add(id3);
-          assignedIds.add(idNorm);
+    const mergedEntities = era.entities
+      .map((entity) => {
+        const matchingGeoms = geometries.filter((g: any) => {
+          const id3 = String(g.id).padStart(3, "0");
+          const idNorm = String(parseInt(id3, 10));
+          return (
+            entity.territoryNumericCodes.includes(id3) ||
+            entity.territoryNumericCodes.includes(idNorm)
+          );
+        });
+
+        if (matchingGeoms.length === 0) return null;
+
+        const merged = topojson.merge(worldData, matchingGeoms);
+        const pathD = merged ? pathGenerator(merged) || "" : "";
+        if (!pathD) return null;
+
+        let centroid: [number, number] | null = null;
+        try {
+          const c = pathGenerator.centroid(merged);
+          if (c && !isNaN(c[0]) && !isNaN(c[1])) {
+            centroid = [c[0], c[1]];
+          }
+        } catch {
+          centroid = null;
         }
-        return matches;
-      });
 
-      const merged = matchingGeoms.length > 0 ? topojson.merge(worldData, matchingGeoms) : null;
-      const pathD = merged ? pathGenerator(merged) || "" : "";
-
-      return {
-        entity,
-        pathD,
-      };
-    }).filter((e) => Boolean(e.pathD));
-
-    // Unassigned territories in this era
-    const unassignedFeatures = geometries
-      .filter((g: any) => {
-        const id3 = String(g.id).padStart(3, "0");
-        const idNorm = String(parseInt(id3, 10));
-        return !assignedIds.has(id3) && !assignedIds.has(idNorm);
-      })
-      .map((g: any) => {
-        const feat: any = topojson.feature(worldData, g);
         return {
-          id: g.id,
-          name: g.properties?.name || feat.properties?.name,
-          pathD: pathGenerator(feat) || "",
+          entity,
+          pathD,
+          centroid,
         };
       })
-      .filter((f: any) => Boolean(f.pathD));
+      .filter((e): e is { entity: HistoricalEntity; pathD: string; centroid: [number, number] | null } =>
+        Boolean(e)
+      );
 
     return {
       era,
       mergedEntities,
-      unassignedFeatures,
     };
   }, [worldData, year, pathGenerator]);
 
@@ -480,82 +484,84 @@ export default function EqualEarthMap({
               strokeDasharray="2,2"
             />
 
-            {/* HISTORICAL ERA (< 2026): Merged Empires (real empire borders) + Unassigned Territories */}
-            {year < 2026 && historicalRenderData ? (
-              <>
-                {/* 1. Unassigned / Native territories */}
-                {historicalRenderData.unassignedFeatures.map((f: any, idx: number) => (
-                  <path
-                    key={`unassigned-${f.id || idx}`}
-                    d={f.pathD}
-                    fill="#151613"
-                    stroke="#2D3028"
-                    strokeWidth="0.5"
-                    className="outline-none"
-                    onMouseEnter={(e) => {
-                      const rect = containerRef.current?.getBoundingClientRect();
-                      const x = rect ? e.clientX - rect.left : e.clientX;
-                      const y = rect ? e.clientY - rect.top : e.clientY;
-                      setTooltip({
-                        x,
-                        y,
-                        territoryName: f.name || "Teritoriu",
-                      });
-                    }}
-                    onMouseMove={(e) => {
-                      if (!tooltip) return;
-                      const rect = containerRef.current?.getBoundingClientRect();
-                      const x = rect ? e.clientX - rect.left : e.clientX;
-                      const y = rect ? e.clientY - rect.top : e.clientY;
-                      setTooltip((prev) => (prev ? { ...prev, x, y } : null));
-                    }}
-                    onMouseLeave={() => setTooltip(null)}
-                  />
-                ))}
+            {/* Natural Continental Landmass Base (worldhist.org style - clean continents with zero phantom modern borders) */}
+            {landPath && (
+              <path
+                d={landPath}
+                fill="#161714"
+                stroke="#252720"
+                strokeWidth="0.7"
+                className="outline-none"
+              />
+            )}
 
-                {/* 2. Unified Historical Empires (outer borders only, internal modern borders dissolved) */}
-                {historicalRenderData.mergedEntities.map(({ entity, pathD }: any) => {
+            {/* HISTORICAL ERA (< 2026): Merged Empires (real shifting empire borders) */}
+            {year < 2026 && historicalRenderData ? (
+              <g className="historical-empires-layer">
+                {historicalRenderData.mergedEntities.map(({ entity, pathD, centroid }: any) => {
                   const isHovered = hoveredCountryCode === entity.id;
+                  const labelText = entity.shortName || entity.name.split("(")[0].trim();
                   return (
-                    <path
-                      key={entity.id}
-                      d={pathD}
-                      fill={entity.color}
-                      stroke={isHovered ? "#FFFFFF" : entity.borderColor || "#D7C5A3"}
-                      strokeWidth={isHovered ? 1.5 : 0.95}
-                      strokeOpacity={0.9}
-                      className="transition-colors duration-150 cursor-pointer outline-none"
-                      onMouseEnter={(e) => {
-                        setHoveredCountryCode(entity.id);
-                        const rect = containerRef.current?.getBoundingClientRect();
-                        const x = rect ? e.clientX - rect.left : e.clientX;
-                        const y = rect ? e.clientY - rect.top : e.clientY;
-                        setTooltip({
-                          x,
-                          y,
-                          historicalEntity: entity,
-                        });
-                      }}
-                      onMouseMove={(e) => {
-                        if (!tooltip) return;
-                        const rect = containerRef.current?.getBoundingClientRect();
-                        const x = rect ? e.clientX - rect.left : e.clientX;
-                        const y = rect ? e.clientY - rect.top : e.clientY;
-                        setTooltip((prev) => (prev ? { ...prev, x, y } : null));
-                      }}
-                      onMouseLeave={() => {
-                        setHoveredCountryCode(null);
-                        setTooltip(null);
-                      }}
-                      onClick={() => {
-                        if (onSelectHistoricalEntity) {
-                          onSelectHistoricalEntity(entity);
-                        }
-                      }}
-                    />
+                    <g key={entity.id} className="group">
+                      <path
+                        d={pathD}
+                        fill={entity.color}
+                        fillOpacity={0.82}
+                        stroke={isHovered ? "#FFFFFF" : entity.borderColor || "#D7C5A3"}
+                        strokeWidth={isHovered ? 2.0 : 1.15}
+                        strokeOpacity={1}
+                        className="transition-colors duration-150 cursor-pointer outline-none hover:brightness-110"
+                        onMouseEnter={(e) => {
+                          setHoveredCountryCode(entity.id);
+                          const rect = containerRef.current?.getBoundingClientRect();
+                          const x = rect ? e.clientX - rect.left : e.clientX;
+                          const y = rect ? e.clientY - rect.top : e.clientY;
+                          setTooltip({
+                            x,
+                            y,
+                            historicalEntity: entity,
+                          });
+                        }}
+                        onMouseMove={(e) => {
+                          if (!tooltip) return;
+                          const rect = containerRef.current?.getBoundingClientRect();
+                          const x = rect ? e.clientX - rect.left : e.clientX;
+                          const y = rect ? e.clientY - rect.top : e.clientY;
+                          setTooltip((prev) => (prev ? { ...prev, x, y } : null));
+                        }}
+                        onMouseLeave={() => {
+                          setHoveredCountryCode(null);
+                          setTooltip(null);
+                        }}
+                        onClick={() => {
+                          if (onSelectHistoricalEntity) {
+                            onSelectHistoricalEntity(entity);
+                          }
+                        }}
+                      />
+                      {/* Empire Territory Label centered on the land (worldhist style) */}
+                      {centroid && (
+                        <text
+                          x={centroid[0]}
+                          y={centroid[1]}
+                          textAnchor="middle"
+                          dominantBaseline="central"
+                          fill="#FDF8ED"
+                          stroke="#0C0D0B"
+                          strokeWidth="3.2px"
+                          paintOrder="stroke fill"
+                          fontSize="9.5px"
+                          fontWeight="700"
+                          letterSpacing="0.04em"
+                          className="pointer-events-none select-none"
+                        >
+                          {labelText}
+                        </text>
+                      )}
+                    </g>
                   );
                 })}
-              </>
+              </g>
             ) : (
               /* MODERN ERA (>= 2026): Modern Sovereign Countries with electoral modes */
               countryFeatures.map((feature: any, idx: number) => {

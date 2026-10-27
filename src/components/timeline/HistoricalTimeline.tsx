@@ -20,22 +20,22 @@ interface HistoricalTimelineProps {
   className?: string;
 }
 
-const MILESTONES = [
+const ALL_MILESTONES = HISTORICAL_ERAS.map((e) => e.year);
+const LABELED_YEARS = new Set([
   -3500,
   -2500,
   -1500,
   -500,
-  -323,
   0,
   500,
   800,
-  1250,
-  1500,
-  1800,
+  1279,
+  1600,
+  1812,
   1914,
-  1945,
+  1942,
   2026,
-];
+]);
 
 export default function HistoricalTimeline({
   year,
@@ -48,7 +48,7 @@ export default function HistoricalTimeline({
   yearRef.current = year;
   const playTimerRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Play animation loop across milestones
+  // Play animation loop across all historical milestones
   useEffect(() => {
     if (!isPlaying) {
       if (playTimerRef.current) clearInterval(playTimerRef.current);
@@ -57,13 +57,13 @@ export default function HistoricalTimeline({
 
     playTimerRef.current = setInterval(() => {
       const currentVal = yearRef.current;
-      const currentIndex = MILESTONES.findIndex((y) => y >= currentVal);
-      if (currentIndex === -1 || currentIndex >= MILESTONES.length - 1) {
-        onYearChange(MILESTONES[0]);
+      const currentIndex = ALL_MILESTONES.findIndex((y) => y >= currentVal);
+      if (currentIndex === -1 || currentIndex >= ALL_MILESTONES.length - 1) {
+        onYearChange(ALL_MILESTONES[0]);
       } else {
-        onYearChange(MILESTONES[currentIndex + 1]);
+        onYearChange(ALL_MILESTONES[currentIndex + 1]);
       }
-    }, 2400);
+    }, 1800);
 
     return () => {
       if (playTimerRef.current) clearInterval(playTimerRef.current);
@@ -72,21 +72,21 @@ export default function HistoricalTimeline({
 
   const handleStepBack = () => {
     setIsPlaying(false);
-    const prevMilestones = MILESTONES.filter((y) => y < year);
+    const prevMilestones = ALL_MILESTONES.filter((y) => y < year);
     if (prevMilestones.length > 0) {
       onYearChange(prevMilestones[prevMilestones.length - 1]);
     } else {
-      onYearChange(MILESTONES[0]);
+      onYearChange(ALL_MILESTONES[0]);
     }
   };
 
   const handleStepForward = () => {
     setIsPlaying(false);
-    const nextMilestones = MILESTONES.filter((y) => y > year);
+    const nextMilestones = ALL_MILESTONES.filter((y) => y > year);
     if (nextMilestones.length > 0) {
       onYearChange(nextMilestones[0]);
     } else {
-      onYearChange(MILESTONES[MILESTONES.length - 1]);
+      onYearChange(ALL_MILESTONES[ALL_MILESTONES.length - 1]);
     }
   };
 
@@ -185,8 +185,9 @@ export default function HistoricalTimeline({
 
         {/* Milestone Marks along the Slider */}
         <div className="relative w-full flex justify-between mt-0.5 px-0.5">
-          {MILESTONES.map((m) => {
+          {ALL_MILESTONES.map((m) => {
             const isSelected = currentEra.year === m || (m === 2026 && isModern);
+            const hasLabel = LABELED_YEARS.has(m);
             const label = m < 0 ? `${Math.abs(m)}BC` : m === 0 ? "0" : `${m}`;
             return (
               <button
@@ -199,21 +200,25 @@ export default function HistoricalTimeline({
                 title={formatYear(m)}
               >
                 <span
-                  className={`w-1 h-1 rounded-full mb-0.5 transition-all ${
+                  className={`rounded-full mb-0.5 transition-all ${
                     isSelected
-                      ? "bg-sand-300 ring-2 ring-sand-300/40 scale-125"
-                      : "bg-earth-700 group-hover:bg-earth-400"
+                      ? "w-1.5 h-1.5 bg-sand-300 ring-2 ring-sand-300/40 scale-125"
+                      : hasLabel
+                      ? "w-1 h-1 bg-earth-500 group-hover:bg-earth-300"
+                      : "w-0.5 h-0.5 bg-earth-700 group-hover:bg-earth-400"
                   }`}
                 />
-                <span
-                  className={`text-[9px] font-mono transition-colors ${
-                    isSelected
-                      ? "text-sand-300 font-bold"
-                      : "text-earth-400 group-hover:text-earth-200"
-                  }`}
-                >
-                  {label}
-                </span>
+                {hasLabel && (
+                  <span
+                    className={`text-[8.5px] font-mono transition-colors ${
+                      isSelected
+                        ? "text-sand-300 font-bold"
+                        : "text-earth-400 group-hover:text-earth-200"
+                    }`}
+                  >
+                    {label}
+                  </span>
+                )}
               </button>
             );
           })}
