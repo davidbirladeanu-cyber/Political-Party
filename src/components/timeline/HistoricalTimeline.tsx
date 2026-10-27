@@ -4,18 +4,14 @@ import React, { useState, useEffect, useRef } from "react";
 import {
   HISTORICAL_ERAS,
   getClosestHistoricalEra,
-  HistoricalEra,
+  formatYear,
 } from "@/lib/data/historical-eras";
 import {
   Play,
   Pause,
-  RotateCcw,
   ChevronLeft,
   ChevronRight,
-  Clock,
-  Sparkles,
-  Layers,
-  Calendar,
+  RotateCcw,
 } from "lucide-react";
 
 interface HistoricalTimelineProps {
@@ -24,7 +20,22 @@ interface HistoricalTimelineProps {
   className?: string;
 }
 
-const ERA_YEARS = [0, 500, 1000, 1500, 1800, 1914, 1945, 1991, 2026];
+const MILESTONES = [
+  -3500,
+  -2500,
+  -1500,
+  -500,
+  -323,
+  0,
+  500,
+  800,
+  1250,
+  1500,
+  1800,
+  1914,
+  1945,
+  2026,
+];
 
 export default function HistoricalTimeline({
   year,
@@ -46,13 +57,13 @@ export default function HistoricalTimeline({
 
     playTimerRef.current = setInterval(() => {
       const currentVal = yearRef.current;
-      const currentIndex = ERA_YEARS.findIndex((y) => y >= currentVal);
-      if (currentIndex === -1 || currentIndex >= ERA_YEARS.length - 1) {
-        onYearChange(ERA_YEARS[0]);
+      const currentIndex = MILESTONES.findIndex((y) => y >= currentVal);
+      if (currentIndex === -1 || currentIndex >= MILESTONES.length - 1) {
+        onYearChange(MILESTONES[0]);
       } else {
-        onYearChange(ERA_YEARS[currentIndex + 1]);
+        onYearChange(MILESTONES[currentIndex + 1]);
       }
-    }, 2800);
+    }, 2400);
 
     return () => {
       if (playTimerRef.current) clearInterval(playTimerRef.current);
@@ -61,124 +72,107 @@ export default function HistoricalTimeline({
 
   const handleStepBack = () => {
     setIsPlaying(false);
-    const prevEras = ERA_YEARS.filter((y) => y < year);
-    if (prevEras.length > 0) {
-      onYearChange(prevEras[prevEras.length - 1]);
+    const prevMilestones = MILESTONES.filter((y) => y < year);
+    if (prevMilestones.length > 0) {
+      onYearChange(prevMilestones[prevMilestones.length - 1]);
     } else {
-      onYearChange(ERA_YEARS[0]);
+      onYearChange(MILESTONES[0]);
     }
   };
 
   const handleStepForward = () => {
     setIsPlaying(false);
-    const nextEras = ERA_YEARS.filter((y) => y > year);
-    if (nextEras.length > 0) {
-      onYearChange(nextEras[0]);
+    const nextMilestones = MILESTONES.filter((y) => y > year);
+    if (nextMilestones.length > 0) {
+      onYearChange(nextMilestones[0]);
     } else {
-      onYearChange(ERA_YEARS[ERA_YEARS.length - 1]);
+      onYearChange(MILESTONES[MILESTONES.length - 1]);
     }
   };
 
   const isModern = year >= 2026;
 
   return (
-    <div
-      className={`w-full rounded-2xl bg-earth-900/95 border border-earth-700/80 shadow-2xl backdrop-blur-xl p-4 sm:p-5 select-none transition-all ${className}`}
-    >
-      {/* Header Info Bar */}
-      <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
-        <div className="flex items-center gap-3">
-          {/* Year Display Badge */}
-          <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-earth-800 border border-earth-700/80 shadow-inner">
-            <Clock className="w-4 h-4 text-sand-300" />
-            <span className="font-mono text-base sm:text-lg font-bold text-white tracking-wide">
-              {year === 0 ? "Anul 0 d.Hr." : `Anul ${year} d.Hr.`}
-            </span>
-          </div>
-
-          <div>
-            <div className="flex items-center gap-2">
-              <span
-                className={`px-2 py-0.5 rounded text-[10px] font-semibold tracking-wider uppercase ${
-                  isModern
-                    ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30"
-                    : "bg-sand-300/15 text-sand-300 border border-sand-300/30"
-                }`}
-              >
-                {isModern ? "Geopolitică Contemporană" : currentEra.period}
-              </span>
-              <span className="text-xs font-semibold text-earth-100 hidden sm:inline">
-                {currentEra.title}
-              </span>
-            </div>
-            <p className="text-[11px] text-earth-400 mt-0.5 line-clamp-1 max-w-md hidden md:block">
-              {currentEra.description}
-            </p>
-          </div>
-        </div>
-
-        {/* Play & Navigation Controls */}
-        <div className="flex items-center gap-1.5 ml-auto">
+    <div className={`w-full flex flex-col gap-1.5 select-none ${className}`}>
+      {/* Top Controls Row */}
+      <div className="flex items-center justify-between gap-2">
+        {/* Left: Playback controls + Year & Era display */}
+        <div className="flex items-center gap-2">
+          {/* Play / Pause button */}
           <button
             onClick={() => setIsPlaying((p) => !p)}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition ${
+            className={`flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-semibold transition ${
               isPlaying
-                ? "bg-rose-500/20 text-rose-300 border border-rose-500/30 hover:bg-rose-500/30"
-                : "bg-sand-300 text-earth-950 hover:bg-sand-200 shadow-md font-bold"
+                ? "bg-rose-500/20 text-rose-300 border border-rose-500/40"
+                : "bg-sand-300 text-earth-950 hover:bg-sand-200"
             }`}
-            title={isPlaying ? "Oprește derularea automată" : "Pornește călătoria prin istorie"}
+            title={isPlaying ? "Pauză" : "Redă călătoria prin istorie"}
           >
             {isPlaying ? (
               <>
-                <Pause className="w-3.5 h-3.5" />
-                <span>Pauză</span>
+                <Pause className="w-3 h-3" />
+                <span className="hidden sm:inline">Pauză</span>
               </>
             ) : (
               <>
-                <Play className="w-3.5 h-3.5 fill-current" />
-                <span>Redare Istorică</span>
+                <Play className="w-3 h-3 fill-current" />
+                <span className="hidden sm:inline">Redare</span>
               </>
             )}
           </button>
 
-          <button
-            onClick={handleStepBack}
-            className="p-1.5 rounded-lg bg-earth-800 hover:bg-earth-750 text-earth-200 border border-earth-700 transition"
-            title="Epoca precedentă"
-          >
-            <ChevronLeft className="w-4 h-4" />
-          </button>
+          {/* Step Back / Step Forward */}
+          <div className="flex items-center gap-0.5">
+            <button
+              onClick={handleStepBack}
+              className="p-1 rounded bg-earth-850 hover:bg-earth-800 text-earth-300 border border-earth-750 transition"
+              title="Epoca anterioară"
+            >
+              <ChevronLeft className="w-3.5 h-3.5" />
+            </button>
+            <button
+              onClick={handleStepForward}
+              className="p-1 rounded bg-earth-850 hover:bg-earth-800 text-earth-300 border border-earth-750 transition"
+              title="Epoca următoare"
+            >
+              <ChevronRight className="w-3.5 h-3.5" />
+            </button>
+          </div>
 
-          <button
-            onClick={handleStepForward}
-            className="p-1.5 rounded-lg bg-earth-800 hover:bg-earth-750 text-earth-200 border border-earth-700 transition"
-            title="Epoca următoare"
-          >
-            <ChevronRight className="w-4 h-4" />
-          </button>
+          {/* Formatted Year Pill */}
+          <span className="font-mono text-sm sm:text-base font-bold text-white px-2 py-0.5 rounded bg-earth-850 border border-earth-750">
+            {formatYear(year)}
+          </span>
 
-          <button
-            onClick={() => {
-              setIsPlaying(false);
-              onYearChange(2026);
-            }}
-            className={`px-2.5 py-1.5 rounded-lg text-xs font-medium border transition ${
-              isModern
-                ? "bg-earth-800 text-sand-300 border-sand-300/40"
-                : "bg-earth-800/60 text-earth-300 border-earth-700 hover:text-earth-100"
-            }`}
-            title="Sari direct la anul curent (2026)"
-          >
-            Anul 2026 (Astăzi)
-          </button>
+          {/* Era Title */}
+          <span className="text-xs text-sand-300 font-medium truncate max-w-[200px] sm:max-w-xs md:max-w-md hidden sm:inline">
+            • {isModern ? "Lumea Contemporană (Alegeri & Granițe Moderne)" : currentEra.title}
+          </span>
+        </div>
+
+        {/* Right: Quick jump to present */}
+        <div className="flex items-center gap-2">
+          {!isModern && (
+            <button
+              onClick={() => {
+                setIsPlaying(false);
+                onYearChange(2026);
+              }}
+              className="flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium bg-earth-850 hover:bg-earth-800 text-earth-200 border border-earth-700 transition"
+              title="Revino la anul curent (2026)"
+            >
+              <RotateCcw className="w-3 h-3 text-sand-300" />
+              <span>Anul 2026 (Astăzi)</span>
+            </button>
+          )}
         </div>
       </div>
 
-      {/* Main Timeline Slider */}
-      <div className="relative py-2">
+      {/* Sleek Timeline Slider Line */}
+      <div className="relative w-full pt-1">
         <input
           type="range"
-          min="0"
+          min="-3500"
           max="2026"
           step="1"
           value={year}
@@ -186,72 +180,44 @@ export default function HistoricalTimeline({
             setIsPlaying(false);
             onYearChange(parseInt(e.target.value, 10));
           }}
-          className="w-full h-2.5 bg-earth-800 rounded-lg appearance-none cursor-pointer accent-sand-300 focus:outline-none"
+          className="w-full h-1.5 bg-earth-800 rounded-lg appearance-none cursor-pointer accent-sand-300 focus:outline-none"
         />
 
         {/* Milestone Marks along the Slider */}
-        <div className="relative w-full flex justify-between mt-1 px-1">
-          {ERA_YEARS.map((y) => {
-            const active = currentEra.year === y || (y === 2026 && isModern);
-            const percentage = (y / 2026) * 100;
+        <div className="relative w-full flex justify-between mt-0.5 px-0.5">
+          {MILESTONES.map((m) => {
+            const isSelected = currentEra.year === m || (m === 2026 && isModern);
+            const label = m < 0 ? `${Math.abs(m)}BC` : m === 0 ? "0" : `${m}`;
             return (
               <button
-                key={y}
+                key={m}
                 onClick={() => {
                   setIsPlaying(false);
-                  onYearChange(y);
+                  onYearChange(m);
                 }}
-                className="group flex flex-col items-center transition"
+                className="group flex flex-col items-center"
+                title={formatYear(m)}
               >
                 <span
-                  className={`w-1.5 h-1.5 rounded-full mb-1 transition-all ${
-                    active
-                      ? "bg-sand-300 ring-4 ring-sand-300/20 scale-125"
-                      : "bg-earth-600 group-hover:bg-earth-400"
+                  className={`w-1 h-1 rounded-full mb-0.5 transition-all ${
+                    isSelected
+                      ? "bg-sand-300 ring-2 ring-sand-300/40 scale-125"
+                      : "bg-earth-700 group-hover:bg-earth-400"
                   }`}
                 />
                 <span
-                  className={`text-[10px] font-mono transition-colors ${
-                    active
+                  className={`text-[9px] font-mono transition-colors ${
+                    isSelected
                       ? "text-sand-300 font-bold"
                       : "text-earth-400 group-hover:text-earth-200"
                   }`}
                 >
-                  {y}
+                  {label}
                 </span>
               </button>
             );
           })}
         </div>
-      </div>
-
-      {/* Quick Jump Era Buttons (scrollable row) */}
-      <div className="flex items-center gap-1.5 overflow-x-auto pt-2.5 border-t border-earth-800/80 scrollbar-none">
-        <span className="text-[11px] text-earth-400 font-medium mr-1 shrink-0">
-          Epoci Cheie:
-        </span>
-        {HISTORICAL_ERAS.map((era) => {
-          const isSelected = currentEra.year === era.year && (!isModern || era.year === 2026);
-          return (
-            <button
-              key={era.year}
-              onClick={() => {
-                setIsPlaying(false);
-                onYearChange(era.year);
-              }}
-              className={`shrink-0 px-2.5 py-1 rounded-lg text-[11px] font-medium transition-all ${
-                isSelected
-                  ? "bg-sand-300 text-earth-950 font-bold shadow-sm"
-                  : "bg-earth-850/80 hover:bg-earth-750 text-earth-300 hover:text-earth-100 border border-earth-750/70"
-              }`}
-            >
-              <span>{era.label}</span>
-              <span className="opacity-70 ml-1 font-normal">
-                • {era.year === 2026 ? "Prezent" : era.title.split("&")[0].trim()}
-              </span>
-            </button>
-          );
-        })}
       </div>
     </div>
   );

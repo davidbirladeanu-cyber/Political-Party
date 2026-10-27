@@ -10,6 +10,7 @@ import { GOVERNMENTS } from "@/lib/data/governments";
 import { UPCOMING_ELECTIONS } from "@/lib/data/upcoming";
 import {
   getHistoricalEntityForTerritory,
+  getClosestHistoricalEra,
   HistoricalEntity,
 } from "@/lib/data/historical-eras";
 import { useRouter } from "next/navigation";
@@ -124,11 +125,9 @@ export default function EqualEarthMap({
         const { width, height: containerHeight } = entry.contentRect;
         const calculatedHeight =
           customHeight ||
-          (containerHeight > 250
+          (containerHeight > 80
             ? containerHeight
-            : minimal
-            ? Math.max(540, Math.min(860, width * 0.58))
-            : Math.max(380, Math.min(640, width * 0.52)));
+            : Math.max(280, Math.min(650, width * 0.48)));
         setDimensions({ width, height: calculatedHeight });
       }
     });
@@ -166,18 +165,22 @@ export default function EqualEarthMap({
     return map;
   }, []);
 
-  // D3 Equal Earth Projection & GeoPath
-  const { pathGenerator, graticulePath, countryFeatures } = useMemo(() => {
+  // D3 Equal Earth Projection & GeoPath: entire globe is completely visible
+  const { pathGenerator, graticulePath, spherePath, countryFeatures } = useMemo(() => {
     const { width, height } = dimensions;
-    // Equal Earth projection fitted to viewport
+    // Scale ensures the entire globe fits with comfortable margin inside the container
+    const scale = Math.min(width / 5.65, height / 2.85);
     const projection = geoEqualEarth()
-      .scale(width / 5.35)
-      .translate([width / 2, height / 2 + 10]);
+      .scale(scale)
+      .translate([width / 2, height / 2]);
 
     const pathGen = geoPath().projection(projection);
 
     const graticule = geoGraticule10();
     const gratPath = pathGen(graticule) || "";
+
+    const sphere = { type: "Sphere" };
+    const sphPath = pathGen(sphere as any) || "";
 
     let features: any[] = [];
     if (worldData && worldData.objects && worldData.objects.countries) {
@@ -188,9 +191,67 @@ export default function EqualEarthMap({
     return {
       pathGenerator: pathGen,
       graticulePath: gratPath,
+      spherePath: sphPath,
       countryFeatures: features,
     };
   }, [dimensions, worldData]);
+
+  // Historical merged empires and dissolved internal borders
+  const historicalRenderData = useMemo(() => {
+    if (!worldData || !worldData.objects || !worldData.objects.countries || year >= 2026) {
+      return null;
+    }
+
+    const era = getClosestHistoricalEra(year);
+    const geometries = worldData.objects.countries.geometries || [];
+    const assignedIds = new Set<string>();
+
+    const mergedEntities = era.entities.map((entity) => {
+      const matchingGeoms = geometries.filter((g: any) => {
+        const id3 = String(g.id).padStart(3, "0");
+        const idNorm = String(parseInt(id3, 10));
+        const matches =
+          entity.territoryNumericCodes.includes(id3) ||
+          entity.territoryNumericCodes.includes(idNorm);
+        if (matches) {
+          assignedIds.add(id3);
+          assignedIds.add(idNorm);
+        }
+        return matches;
+      });
+
+      const merged = matchingGeoms.length > 0 ? topojson.merge(worldData, matchingGeoms) : null;
+      const pathD = merged ? pathGenerator(merged) || "" : "";
+
+      return {
+        entity,
+        pathD,
+      };
+    }).filter((e) => Boolean(e.pathD));
+
+    // Unassigned territories in this era
+    const unassignedFeatures = geometries
+      .filter((g: any) => {
+        const id3 = String(g.id).padStart(3, "0");
+        const idNorm = String(parseInt(id3, 10));
+        return !assignedIds.has(id3) && !assignedIds.has(idNorm);
+      })
+      .map((g: any) => {
+        const feat: any = topojson.feature(worldData, g);
+        return {
+          id: g.id,
+          name: g.properties?.name || feat.properties?.name,
+          pathD: pathGenerator(feat) || "",
+        };
+      })
+      .filter((f: any) => Boolean(f.pathD));
+
+    return {
+      era,
+      mergedEntities,
+      unassignedFeatures,
+    };
+  }, [worldData, year, pathGenerator]);
 
   // Color generator based on mode
   const getCountryFill = (country: Country | undefined): string => {
@@ -400,66 +461,131 @@ export default function EqualEarthMap({
             transform={`translate(${panOffset.x}, ${panOffset.y}) scale(${zoomLevel})`}
             style={{ transformOrigin: "center center", transition: isDragging ? "none" : "transform 0.15s ease-out" }}
           >
+            {/* Sphere Ocean Boundary */}
+            {spherePath && (
+              <path
+                d={spherePath}
+                fill="#0D0E0C"
+                stroke="#2A2D26"
+                strokeWidth="0.8"
+              />
+            )}
+
             {/* Graticules Lines */}
             <path
               d={graticulePath}
               fill="none"
-              stroke="#1F211D"
+              stroke="#1C1E19"
               strokeWidth="0.5"
               strokeDasharray="2,2"
             />
 
-            {/* Countries Geometry */}
-            {countryFeatures.map((feature: any, idx: number) => {
-              const numId = String(feature.id).padStart(3, "0");
-              const country = countryByNumeric.get(numId);
-              const isHistorical = year < 2026;
-              const historicalEntity = isHistorical
-                ? getHistoricalEntityForTerritory(year, numId)
-                : undefined;
-
-              const isHovered = hoveredCountryCode === String(feature.id);
-              const isSelected = country && selectedCountryCode === country.code;
-              
-              let fill: string;
-              if (isHistorical) {
-                fill = historicalEntity ? historicalEntity.color : "#1A1B18";
-              } else {
-                fill = getCountryFill(country);
-              }
-
-              const pathD = pathGenerator(feature) || "";
-
-              return (
-                <path
-                  key={feature.id || idx}
-                  d={pathD}
-                  fill={fill}
-                  stroke={
-                    isSelected
-                      ? "#D7C5A3"
-                      : isHovered
-                      ? historicalEntity?.borderColor || "#F2EFE6"
-                      : isHistorical && historicalEntity
-                      ? `${historicalEntity.color}bb`
-                      : "#242520"
-                  }
-                  strokeWidth={isSelected ? 1.75 : isHovered ? 1.5 : 0.45}
-                  className="transition-colors duration-150 cursor-pointer outline-none"
-                  onMouseEnter={(e) => {
-                    setHoveredCountryCode(String(feature.id));
-                    const rect = containerRef.current?.getBoundingClientRect();
-                    const x = rect ? e.clientX - rect.left : e.clientX;
-                    const y = rect ? e.clientY - rect.top : e.clientY;
-
-                    if (isHistorical) {
+            {/* HISTORICAL ERA (< 2026): Merged Empires (real empire borders) + Unassigned Territories */}
+            {year < 2026 && historicalRenderData ? (
+              <>
+                {/* 1. Unassigned / Native territories */}
+                {historicalRenderData.unassignedFeatures.map((f: any, idx: number) => (
+                  <path
+                    key={`unassigned-${f.id || idx}`}
+                    d={f.pathD}
+                    fill="#151613"
+                    stroke="#2D3028"
+                    strokeWidth="0.5"
+                    className="outline-none"
+                    onMouseEnter={(e) => {
+                      const rect = containerRef.current?.getBoundingClientRect();
+                      const x = rect ? e.clientX - rect.left : e.clientX;
+                      const y = rect ? e.clientY - rect.top : e.clientY;
                       setTooltip({
                         x,
                         y,
-                        historicalEntity,
-                        territoryName: feature.properties?.name || country?.name || "Teritoriu",
+                        territoryName: f.name || "Teritoriu",
                       });
-                    } else {
+                    }}
+                    onMouseMove={(e) => {
+                      if (!tooltip) return;
+                      const rect = containerRef.current?.getBoundingClientRect();
+                      const x = rect ? e.clientX - rect.left : e.clientX;
+                      const y = rect ? e.clientY - rect.top : e.clientY;
+                      setTooltip((prev) => (prev ? { ...prev, x, y } : null));
+                    }}
+                    onMouseLeave={() => setTooltip(null)}
+                  />
+                ))}
+
+                {/* 2. Unified Historical Empires (outer borders only, internal modern borders dissolved) */}
+                {historicalRenderData.mergedEntities.map(({ entity, pathD }: any) => {
+                  const isHovered = hoveredCountryCode === entity.id;
+                  return (
+                    <path
+                      key={entity.id}
+                      d={pathD}
+                      fill={entity.color}
+                      stroke={isHovered ? "#FFFFFF" : entity.borderColor || "#D7C5A3"}
+                      strokeWidth={isHovered ? 1.5 : 0.95}
+                      strokeOpacity={0.9}
+                      className="transition-colors duration-150 cursor-pointer outline-none"
+                      onMouseEnter={(e) => {
+                        setHoveredCountryCode(entity.id);
+                        const rect = containerRef.current?.getBoundingClientRect();
+                        const x = rect ? e.clientX - rect.left : e.clientX;
+                        const y = rect ? e.clientY - rect.top : e.clientY;
+                        setTooltip({
+                          x,
+                          y,
+                          historicalEntity: entity,
+                        });
+                      }}
+                      onMouseMove={(e) => {
+                        if (!tooltip) return;
+                        const rect = containerRef.current?.getBoundingClientRect();
+                        const x = rect ? e.clientX - rect.left : e.clientX;
+                        const y = rect ? e.clientY - rect.top : e.clientY;
+                        setTooltip((prev) => (prev ? { ...prev, x, y } : null));
+                      }}
+                      onMouseLeave={() => {
+                        setHoveredCountryCode(null);
+                        setTooltip(null);
+                      }}
+                      onClick={() => {
+                        if (onSelectHistoricalEntity) {
+                          onSelectHistoricalEntity(entity);
+                        }
+                      }}
+                    />
+                  );
+                })}
+              </>
+            ) : (
+              /* MODERN ERA (>= 2026): Modern Sovereign Countries with electoral modes */
+              countryFeatures.map((feature: any, idx: number) => {
+                const numId = String(feature.id).padStart(3, "0");
+                const country = countryByNumeric.get(numId);
+                const isHovered = hoveredCountryCode === String(feature.id);
+                const isSelected = country && selectedCountryCode === country.code;
+                const fill = getCountryFill(country);
+                const pathD = pathGenerator(feature) || "";
+
+                return (
+                  <path
+                    key={feature.id || idx}
+                    d={pathD}
+                    fill={fill}
+                    stroke={
+                      isSelected
+                        ? "#D7C5A3"
+                        : isHovered
+                        ? "#F2EFE6"
+                        : "#3A3C34"
+                    }
+                    strokeWidth={isSelected ? 1.6 : isHovered ? 1.2 : 0.65}
+                    className="transition-colors duration-150 cursor-pointer outline-none"
+                    onMouseEnter={(e) => {
+                      setHoveredCountryCode(String(feature.id));
+                      const rect = containerRef.current?.getBoundingClientRect();
+                      const x = rect ? e.clientX - rect.left : e.clientX;
+                      const y = rect ? e.clientY - rect.top : e.clientY;
+
                       const latestEl = country ? latestElectionByCountry.get(country.code) : undefined;
                       const upc = country ? upcomingByCountry.get(country.code) : undefined;
 
@@ -472,35 +598,31 @@ export default function EqualEarthMap({
                         latestElectionWinnerColor: latestEl?.winnerColor,
                         upcomingInfo: upc,
                       });
-                    }
-                  }}
-                  onMouseMove={(e) => {
-                    if (!tooltip) return;
-                    const rect = containerRef.current?.getBoundingClientRect();
-                    const x = rect ? e.clientX - rect.left : e.clientX;
-                    const y = rect ? e.clientY - rect.top : e.clientY;
-                    setTooltip((prev) => (prev ? { ...prev, x, y } : null));
-                  }}
-                  onMouseLeave={() => {
-                    setHoveredCountryCode(null);
-                    setTooltip(null);
-                  }}
-                  onClick={() => {
-                    if (isHistorical) {
-                      if (historicalEntity && onSelectHistoricalEntity) {
-                        onSelectHistoricalEntity(historicalEntity);
+                    }}
+                    onMouseMove={(e) => {
+                      if (!tooltip) return;
+                      const rect = containerRef.current?.getBoundingClientRect();
+                      const x = rect ? e.clientX - rect.left : e.clientX;
+                      const y = rect ? e.clientY - rect.top : e.clientY;
+                      setTooltip((prev) => (prev ? { ...prev, x, y } : null));
+                    }}
+                    onMouseLeave={() => {
+                      setHoveredCountryCode(null);
+                      setTooltip(null);
+                    }}
+                    onClick={() => {
+                      if (country) {
+                        if (onSelectCountry) {
+                          onSelectCountry(country);
+                        } else {
+                          router.push(`/countries/${country.code.toLowerCase()}`);
+                        }
                       }
-                    } else if (country) {
-                      if (onSelectCountry) {
-                        onSelectCountry(country);
-                      } else {
-                        router.push(`/countries/${country.code.toLowerCase()}`);
-                      }
-                    }
-                  }}
-                />
-              );
-            })}
+                    }}
+                  />
+                );
+              })
+            )}
           </g>
         </svg>
 
