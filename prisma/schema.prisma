@@ -1,0 +1,400 @@
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model Country {
+  id                    String   @id @default(uuid())
+  code                  String   @unique
+  alpha3                String   @unique
+  numericCode           String   @unique
+  name                  String
+  officialName          String
+  flag                  String
+  capital               String
+  region                String
+  subregion             String
+  politicalSystem       String
+  headOfState           String
+  headOfStateTitle      String
+  headOfGovernment      String
+  headOfGovernmentTitle String
+  legislatureName       String
+  chamberStructure      String
+  upperChamberName      String?
+  lowerChamberName      String?
+  totalLegislativeSeats Int
+  coverageStatus        String
+  lastElectionDate      String?
+  nextElectionDate      String?
+  latestTurnoutPercent  Float?
+  description           String
+  electoralSystemSummary String
+  lastUpdated           DateTime @default(now())
+
+  regions               AdministrativeRegion[]
+  elections             Election[]
+  parties               PoliticalParty[]
+  governments           Government[]
+  candidates            Candidate[]
+  dataSources           DataSource[]
+  dataImports           DataImport[]
+
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+}
+
+model AdministrativeDivisionType {
+  id          String   @id @default(uuid())
+  countryCode String
+  level       Int
+  name        String
+  pluralName  String
+}
+
+model AdministrativeRegion {
+  id               String   @id @default(uuid())
+  countryId        String
+  country          Country  @relation(fields: [countryId], references: [id])
+  code             String
+  name             String
+  type             String
+  capitalCity      String?
+  population       Int?
+  registeredVoters Int?
+  
+  electoralDistricts ElectoralDistrict[]
+  regionalResults    RegionalElectionResult[]
+
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  
+  @@unique([countryId, code])
+}
+
+model ElectoralDistrict {
+  id            String   @id @default(uuid())
+  regionId      String
+  region        AdministrativeRegion @relation(fields: [regionId], references: [id])
+  name          String
+  districtCode  String
+  seatCount     Int      @default(1)
+  districtType  String
+
+  createdAt     DateTime @default(now())
+}
+
+model ElectoralSystem {
+  id            String   @id @default(uuid())
+  name          String   @unique
+  description   String
+  formula       String
+  thresholdNote String?
+}
+
+model ElectionType {
+  id          String   @id @default(uuid())
+  code        String   @unique
+  name        String
+  description String
+}
+
+model Election {
+  id                  String   @id @default(uuid())
+  countryId           String
+  country             Country  @relation(fields: [countryId], references: [id])
+  name                String
+  type                String
+  chamber             String?
+  date                String
+  status              String
+  electoralSystem     String
+  thresholdPercentage Float?
+  registeredVoters    Int
+  votesCast           Int
+  validVotes          Int
+  invalidVotes        Int
+  turnoutPercentage   Float
+  hasRounds           Boolean  @default(false)
+  summary             String
+  officialSource      String
+  sourceUrl           String
+  verificationDate    String
+  certifiedDate       String?
+
+  rounds              ElectionRound[]
+  partyResults        ElectionPartyResult[]
+  candidateResults    ElectionCandidateResult[]
+  regionalResults     RegionalElectionResult[]
+  dataRevisions       DataRevision[]
+
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+}
+
+model ElectionRound {
+  id                String   @id @default(uuid())
+  electionId        String
+  election          Election @relation(fields: [electionId], references: [id], onDelete: Cascade)
+  roundNumber       Int
+  roundName         String
+  date              String
+  registeredVoters  Int
+  votesCast         Int
+  validVotes        Int
+  invalidVotes      Int
+  turnoutPercentage Float
+
+  candidateResults  ElectionCandidateResult[]
+  partyResults      ElectionPartyResult[]
+
+  createdAt         DateTime @default(now())
+}
+
+model ElectionPartyResult {
+  id                  String         @id @default(uuid())
+  electionId          String
+  election            Election       @relation(fields: [electionId], references: [id], onDelete: Cascade)
+  roundId             String?
+  round               ElectionRound? @relation(fields: [roundId], references: [id], onDelete: Cascade)
+  partyId             String
+  party               PoliticalParty @relation(fields: [partyId], references: [id])
+  voteTotal           Int
+  votePercentage      Float
+  seatsWon            Int            @default(0)
+  totalSeats          Int?
+  seatSharePercentage Float?
+  seatChange          Int?
+  voteShareChange     Float?
+  isWinner            Boolean        @default(false)
+  isGoverning         Boolean        @default(false)
+
+  createdAt           DateTime @default(now())
+}
+
+model ElectionCandidateResult {
+  id                 String         @id @default(uuid())
+  electionId         String
+  election           Election       @relation(fields: [electionId], references: [id], onDelete: Cascade)
+  roundId            String?
+  round              ElectionRound? @relation(fields: [roundId], references: [id], onDelete: Cascade)
+  candidateId        String
+  candidate          Candidate      @relation(fields: [candidateId], references: [id])
+  voteTotal          Int
+  votePercentage     Float
+  isWinner           Boolean        @default(false)
+  qualifiedForRunoff Boolean        @default(false)
+
+  createdAt          DateTime @default(now())
+}
+
+model RegionalElectionResult {
+  id                String               @id @default(uuid())
+  electionId        String
+  election          Election             @relation(fields: [electionId], references: [id], onDelete: Cascade)
+  regionId          String
+  region            AdministrativeRegion @relation(fields: [regionId], references: [id])
+  winnerName        String
+  winnerColor       String
+  winnerPercentage  Float
+  turnoutPercentage Float
+  breakdownJson     String
+
+  createdAt         DateTime @default(now())
+}
+
+model PoliticalParty {
+  id                    String   @id @default(uuid())
+  countryId             String
+  country               Country  @relation(fields: [countryId], references: [id])
+  officialName          String
+  commonName            String
+  acronym               String
+  color                 String
+  foundingYear          Int
+  status                String
+  website               String
+  logoUrl               String?
+  currentLeader         String
+  family                String
+  economicPosition      Float
+  socialPosition        Float
+  europeanIntegration   Float
+  sovereigntyIndex      Float
+  selfDescription       String
+  independentAssessment String
+  currentRole           String
+  strongholdsJson       String
+  sourcesJson           String
+  lastVerified          String
+
+  partyResults          ElectionPartyResult[]
+  affiliations          PartyAffiliation[]
+  coalitionMemberships  CoalitionMembership[]
+  governmentParties     GovernmentParty[]
+
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+}
+
+model PartyAffiliation {
+  id          String         @id @default(uuid())
+  candidateId String
+  candidate   Candidate      @relation(fields: [candidateId], references: [id])
+  partyId     String
+  party       PoliticalParty @relation(fields: [partyId], references: [id])
+  startDate   String
+  endDate     String?
+  isCurrent   Boolean        @default(true)
+}
+
+model PartyRelationship {
+  id            String   @id @default(uuid())
+  parentPartyId String
+  childPartyId  String
+  type          String
+  effectiveDate String
+  description   String
+}
+
+model Coalition {
+  id            String   @id @default(uuid())
+  countryCode   String
+  name          String
+  formedDate    String
+  dissolvedDate String?
+  type          String
+  summary       String
+
+  members       CoalitionMembership[]
+}
+
+model CoalitionMembership {
+  id          String         @id @default(uuid())
+  coalitionId String
+  coalition   Coalition      @relation(fields: [coalitionId], references: [id])
+  partyId     String
+  party       PoliticalParty @relation(fields: [partyId], references: [id])
+  role        String
+}
+
+model Government {
+  id                        String   @id @default(uuid())
+  countryId                 String
+  country                   Country  @relation(fields: [countryId], references: [id])
+  name                      String
+  headOfGovernment          String
+  headOfGovernmentParty     String
+  headOfState               String
+  formationDate             String
+  dissolutionDate           String?
+  status                    String
+  type                      String
+  parliamentaryChamber      String
+  totalSeats                Int
+  majorityThreshold         Int
+  governingSeatsTotal       Int
+  majorityMargin            Int
+  confidenceAndSupplyNotes  String?
+  coalitionAgreementSummary String
+  keyPrioritiesJson         String
+  sourcesJson               String
+  lastVerified              String
+
+  governingParties          GovernmentParty[]
+
+  createdAt                 DateTime @default(now())
+  updatedAt                 DateTime @updatedAt
+}
+
+model GovernmentParty {
+  id                    String         @id @default(uuid())
+  governmentId          String
+  government            Government     @relation(fields: [governmentId], references: [id], onDelete: Cascade)
+  partyId               String
+  party                 PoliticalParty @relation(fields: [partyId], references: [id])
+  role                  String
+  seatsHeld             Int
+  cabinetMinistersCount Int
+}
+
+model Candidate {
+  id           String   @id @default(uuid())
+  countryId    String
+  country      Country  @relation(fields: [countryId], references: [id])
+  fullName     String
+  publicRole   String
+  birthYear    Int
+  biography    String
+  verifiedDate String
+  sourceUrl    String
+
+  results      ElectionCandidateResult[]
+  affiliations PartyAffiliation[]
+  officeTerms  OfficeTerm[]
+
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model Office {
+  id           String   @id @default(uuid())
+  countryCode  String
+  name         String
+  type         String
+  jurisdiction String
+}
+
+model OfficeTerm {
+  id          String    @id @default(uuid())
+  candidateId String
+  candidate   Candidate @relation(fields: [candidateId], references: [id])
+  officeName  String
+  startDate   String
+  endDate     String?
+}
+
+model DataSource {
+  id              String   @id @default(uuid())
+  countryId       String
+  country         Country  @relation(fields: [countryId], references: [id])
+  authorityName   String
+  authorityType   String
+  officialUrl     String
+  legalBasis      String
+  dataLicense     String
+  datasetTypes    String
+  updateFrequency String
+  lastAuditDate   String
+  apiAvailable    Boolean  @default(false)
+
+  dataImports     DataImport[]
+  createdAt       DateTime @default(now())
+}
+
+model DataImport {
+  id           String     @id @default(uuid())
+  countryId    String
+  country      Country    @relation(fields: [countryId], references: [id])
+  sourceId     String
+  source       DataSource @relation(fields: [sourceId], references: [id])
+  importedAt   DateTime   @default(now())
+  recordsCount Int
+  status       String
+  log          String?
+}
+
+model DataRevision {
+  id          String   @id @default(uuid())
+  electionId  String
+  election    Election @relation(fields: [electionId], references: [id])
+  revisedAt   DateTime @default(now())
+  reason      String
+  previousVal String?
+  newVal      String?
+  sourceRef   String
+}
